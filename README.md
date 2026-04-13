@@ -2,8 +2,14 @@
 
 一款类似 Keep 跑步记录但带有游戏化迷雾探索机制的遛狗轨迹记录工具。
 
-![Preview](https://img.shields.io/badge/Status-Active-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.0-green)
 ![License](https://img.shields.io/badge/License-MIT-blue)
+
+## 🐕 迷雾遛狗地图 v1.0
+
+**在线访问**: http://118.178.125.76:5004
+
+---
 
 ## ✨ 功能特性
 
