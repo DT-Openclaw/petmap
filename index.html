@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>迷雾遛狗地图</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+        #map { width: 100vw; height: 100vh; }
+        .top-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%); padding: 15px; display: flex; justify-content: space-between; align-items: center; color: white; }
+        .top-bar .stats { display: flex; gap: 15px; font-size: 14px; }
+        .top-bar .stat-item { display: flex; flex-direction: column; align-items: center; }
+        .top-bar .stat-value { font-size: 18px; font-weight: bold; color: #4CAF50; }
+        .top-bar .stat-label { font-size: 11px; opacity: 0.8; }
+        .control-panel { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; border-radius: 20px; padding: 15px 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 280px; }
+        .data-row { display: flex; gap: 20px; justify-content: center; width: 100%; }
+        .data-item { text-align: center; }
+        .data-value { font-size: 20px; font-weight: bold; color: #333; }
+        .data-label { font-size: 11px; color: #888; }
+        .btn-row { display: flex; gap: 10px; }
+        .btn { padding: 12px 28px; border: none; border-radius: 25px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-start { background: #4CAF50; color: white; }
+        .btn-pause { background: #FF9800; color: white; }
+        .btn-stop { background: #f44336; color: white; }
+        .btn:hover { transform: scale(1.05); }
+        .btn:disabled { opacity: 0.5; transform: none; }
+        .menu-btn { position: fixed; top: 70px; right: 15px; z-index: 1001; width: 40px; height: 40px; border-radius: 50%; background: white; border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-size: 20px; cursor: pointer; }
+        .settings-panel { position: fixed; top: 0; right: -300px; width: 300px; height: 100vh; background: white; z-index: 1002; transition: right 0.3s; padding: 20px; overflow-y: auto; }
+        .settings-panel.open { right: 0; }
+        .settings-panel h2 { font-size: 18px; margin-bottom: 20px; color: #333; }
+        .settings-panel .setting-item { margin-bottom: 20px; }
+        .settings-panel label { display: block; margin-bottom: 8px; font-size: 14px; color: #666; }
+        .settings-panel select, .settings-panel input[type="range"] { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ddd; }
+        .close-btn { position: absolute; top: 15px; right: 15px; font-size: 24px; cursor: pointer; }
+        .history-panel { position: fixed; top: 0; left: -350px; width: 350px; height: 100vh; background: white; z-index: 1002; transition: left 0.3s; overflow-y: auto; padding: 20px; }
+        .history-panel.open { left: 0; }
+        .history-item { background: #f5f5f5; border-radius: 12px; padding: 15px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; }
+        .history-item:hover { background: #e8f5e9; }
+        .history-item h3 { font-size: 14px; color: #333; margin-bottom: 8px; }
+        .history-item p { font-size: 12px; color: #888; }
+        .achievements { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+        .achievement { text-align: center; padding: 10px; background: #f5f5f5; border-radius: 10px; }
+        .achievement.locked { opacity: 0.4; }
+        .achievement-icon { font-size: 24px; }
+        .achievement-name { font-size: 11px; color: #666; margin-top: 5px; }
+        .loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 2000; text-align: center; }
+        .loading-spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #4CAF50; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .night-mode .top-bar { background: linear-gradient(180deg, rgba(20,20,30,0.9) 0%, transparent 100%); }
+        .night-mode .control-panel { background: #2a2a2a; }
+        .night-mode .data-value { color: #fff; }
+        .night-mode .data-label { color: #aaa; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="top-bar">
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-value" id="explorePercent">0%</span>
+                <span class="stat-label">探索进度</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="totalWalks">0</span>
+                <span class="stat-label">遛狗次数</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="totalDistance">0km</span>
+                <span class="stat-label">累计里程</span>
+            </div>
+        </div>
+    </div>
+    <button class="menu-btn" id="menuBtn">☰</button>
+    <div class="control-panel">
+        <div class="data-row">
+            <div class="data-item">
+                <div class="data-value" id="distance">0.00</div>
+                <div class="data-label">公里</div>
+            </div>
+            <div class="data-item">
+                <div class="data-value" id="duration">00:00</div>
+                <div class="data-label">时长</div>
+            </div>
+            <div class="data-item">
+                <div class="data-value" id="speed">0.0</div>
+                <div class="data-label">km/h</div>
+            </div>
+            <div class="data-item">
+                <div class="data-value" id="calories">0</div>
+                <div class="data-label">千卡</div>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-start" id="startBtn">开始遛狗</button>
+            <button class="btn btn-pause" id="pauseBtn" disabled>暂停</button>
+            <button class="btn btn-stop" id="stopBtn" disabled>结束</button>
+        </div>
+    </div>
+    <div class="settings-panel" id="settingsPanel">
+        <span class="close-btn" id="closeSettings">×</span>
+        <h2>设置</h2>
+        <div class="setting-item">
+            <label>地图类型</label>
+            <select id="mapType">
+                <option value="standard">标准地图</option>
+                <option value="satellite">卫星地图</option>
+                <option value="terrain">地形图</option>
+            </select>
+        </div>
+        <div class="setting-item">
+            <label>探索半径: <span id="radiusValue">30</span>米</label>
+            <input type="range" id="exploreRadius" min="20" max="50" value="30">
+        </div>
+        <div class="setting-item">
+            <label>遛狗提醒</label>
+            <input type="time" id="reminderTime" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd;">
+            <button class="btn btn-start" id="setReminder" style="margin-top:10px;width:100%;">设置提醒</button>
+        </div>
+        <div class="setting-item">
+            <button class="btn" id="toggleNight" style="width:100%;background:#666;color:white;">切换夜间模式</button>
+        </div>
+        <div class="setting-item">
+            <button class="btn" id="resetExplore" style="width:100%;background:#f44336;color:white;">重置探索进度</button>
+        </div>
+    </div>
+    <div class="history-panel" id="historyPanel">
+        <span class="close-btn" id="closeHistory">×</span>
+        <h2>历史记录</h2>
+        <div id="historyList"></div>
+        <button class="btn" id="clearHistory" style="width:100%;margin-top:20px;background:#f44336;color:white;">清空所有记录</button>
+    </div>
+    <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <div>正在获取位置...</div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ==================== 初始化 ====================
+        const STORAGE_KEYS = {
+            EXPLORED: 'petmap_explored',
+            HISTORY: 'petmap_history',
+            SETTINGS: 'petmap_settings',
+            ACHIEVEMENTS: 'petmap_achievements'
+        };
+        
+        let map, userMarker, pathLine, fogCanvas, fogCtx;
+        let currentPosition = null;
+        let pathCoords = [];
+        let isTracking = false;
+        let isPaused = false;
+        let startTime = null;
+        let pausedTime = 0;
+        let timerInterval = null;
+        let exploreRadius = 30;
+        let exploredAreas = [];
+        let history = [];
+        let achievements = {};
+        let nightMode = false;
+        let mapLayers = {};
+        
+        // 地图图层配置
+        const MAP_LAYERS = {
+            standard: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            terrain: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+        };
+        
+        // 成就系统
+        const ACHIEVEMENT_LIST = {
+            first_walk: { name: '初次遛狗', icon: '🐕', desc: '完成第一次遛狗' },
+            distance_1km: { name: '1公里达人', icon: '🏃', desc: '单次遛狗达到1公里' },
+            distance_5km: { name: '5公里健将', icon: '🏅', desc: '单次遛狗达到5公里' },
+            explore_10: { name: '探索者', icon: '🔍', desc: '探索10个新区域' },
+            explore_50: { name: '探险家', icon: '🗺️', desc: '探索50个新区域' },
+            walk_10: { name: '资深铲屎官', icon: '🌟', desc: '遛狗10次' },
+            walk_50: { name: '遛狗达人', icon: '👑', desc: '遛狗50次' }
+        };
+        
+        // ==================== 存储管理 ====================
+        function saveData(key, data) {
+            localStorage.setItem(key, JSON.stringify(data));
+        }
+        
+        function loadData(key, defaultVal) {
+            const data = localStorage.getItem(key);
+            return data ? JSON.parse(data) : defaultVal;
+        }
+        
+        // ==================== 地图初始化 ====================
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([39.9042, 116.4074], 16);
+            
+            // 添加标准地图
+            mapLayers.standard = L.tileLayer(MAP_LAYERS.standard, {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            mapLayers.satellite = L.tileLayer(MAP_LAYERS.satellite, {
+                attribution: '© Esri'
+            });
+            
+            mapLayers.terrain = L.tileLayer(MAP_LAYERS.terrain, {
+                attribution: '© OpenTopoMap'
+            });
+            
+            // 初始化迷雾Canvas
+            initFogLayer();
+            
+            // 加载数据
+            exploredAreas = loadData(STORAGE_KEYS.EXPLORED, []);
+            history = loadData(STORAGE_KEYS.HISTORY, []);
+            achievements = loadData(STORAGE_KEYS.ACHIEVEMENTS, {});
+            
+            // 更新UI
+            updateStats();
+            updateHistoryList();
+            checkAchievements();
+            
+            // 定位
+            requestLocation();
+        }
+        
+        function initFogLayer() {
+            fogCanvas = L.canvas({ padding: 0 });
+            fogCtx = fogCanvas.getContext('2d');
+            
+            L.tileLayer.canvas({
+                attribution: ' '
+            }).addTo(map);
+            
+            map.on('moveend zoomend', drawFog);
+        }
+        
+        function drawFog() {
+            if (!fogCtx) return;
+            
+            const size = map.getSize();
+            fogCanvas.width = size.x;
+            fogCanvas.height = size.y;
+            
+            // 绘制迷雾
+            fogCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            fogCtx.fillRect(0, 0, size.x, size.y);
+            
+            // 挖空已探索区域
+            exploredAreas.forEach(area => {
+                const point = map.latLngToContainerPoint([area.lat, area.lng]);
+                const radius = map.getZoom() * (area.radius / 10);
+                
+                fogCtx.globalCompositeOperation = 'destination-out';
+                fogCtx.beginPath();
+                fogCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+                fogCtx.fill();
+                fogCtx.globalCompositeOperation = 'source-over';
+            });
+        }
+        
+        // ==================== 定位功能 ====================
+        function requestLocation() {
+            if (!navigator.geolocation) {
+                showMessage('您的浏览器不支持GPS定位');
+                hideLoading();
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    currentPosition = [position.coords.latitude, position.coords.longitude];
+                    map.setView(currentPosition, 16);
+                    
+                    // 添加用户标记
+                    if (userMarker) map.removeLayer(userMarker);
+                    userMarker = L.marker(currentPosition, {
+                        icon: L.divIcon({
+                            className: 'user-marker',
+                            html: '<div style="width:24px;height:24px;background:#4CAF50;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        })
+                    }).addTo(map);
+                    
+                    // 初始探索区域
+                    exploreArea(currentPosition[0], currentPosition[1], 50);
+                    hideLoading();
+                },
+                error => {
+                    let msg = '无法获取位置';
+                    if (error.code === 1) msg = '请允许位置权限';
+                    else if (error.code === 2) msg = '位置不可用';
+                    else if (error.code === 3) msg = '定位超时';
+                    showMessage(msg);
+                    hideLoading();
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+            
+            // 持续跟踪位置
+            navigator.geolocation.watchPosition(
+                position => {
+                    const newPos = [position.coords.latitude, position.coords.longitude];
+                    
+                    if (isTracking && !isPaused) {
+                        // 更新路径
+                        pathCoords.push(newPos);
+                        updatePath();
+                        
+                        // 探索新区域
+                        exploreArea(newPos[0], newPos[1], exploreRadius);
+                    }
+                    
+                    // 更新用户位置
+                    currentPosition = newPos;
+                    if (userMarker) {
+                        userMarker.setLatLng(newPos);
+                    }
+                    
+                    // 地图自动跟随
+                    if (isTracking && !isPaused) {
+                        map.setView(newPos);
+                    }
+                },
+                null,
+                { enableHighAccuracy: true }
+            );
+        }
+        
+        // ==================== 迷雾探索 ====================
+        function exploreArea(lat, lng, radius) {
+            // 检查是否已探索
+            const exists = exploredAreas.some(area => 
+                Math.abs(area.lat - lat) < 0.0005 && Math.abs(area.lng - lng) < 0.0005
+            );
+            
+            if (!exists) {
+                exploredAreas.push({ lat, lng, radius, time: Date.now() });
+                saveData(STORAGE_KEYS.EXPLORED, exploredAreas);
+                drawFog();
+                checkAchievements();
+            }
+        }
+        
+        function updateExplorePercent() {
+            // 简单估算：假设探索区域总覆盖约50平方公里
+            const totalArea = 50 * 1000000; // 50平方公里
+            const exploredArea = exploredAreas.length * Math.PI * Math.pow(exploreRadius, 2);
+            const percent = Math.min(100, Math.round((exploredArea / totalArea) * 100));
+            document.getElementById('explorePercent').textContent = percent + '%';
+        }
+        
+        // ==================== 轨迹记录 ====================
+        function startWalk() {
+            if (!currentPosition) {
+                showMessage('请等待定位完成');
+                return;
+            }
+            
+            isTracking = true;
+            isPaused = false;
+            pathCoords = [currentPosition];
+            startTime = Date.now();
+            pausedTime = 0;
+            
+            // 创建轨迹线
+            if (pathLine) map.removeLayer(pathLine);
+            pathLine = L.polyline(pathCoords, {
+                color: '#4CAF50',
+                weight: 4,
+                opacity: 0.8,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(map);
+            
+            // 开始计时
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            // 更新按钮
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = false;
+        }
+        
+        function pauseWalk() {
+            if (isTracking) {
+                isPaused = !isPaused;
+                document.getElementById('pauseBtn').textContent = isPaused ? '继续' : '暂停';
+                
+                if (isPaused) {
+                    pausedTime = Date.now();
+                } else {
+                    pausedTime = Date.now() - pausedTime;
+                    startTime += pausedTime;
+                }
+            }
+        }
+        
+        function stopWalk() {
+            if (!isTracking) return;
+            
+            isTracking = false;
+            clearInterval(timerInterval);
+            
+            // 计算统计数据
+            const duration = Math.floor((Date.now() - startTime) / 1000);
+            const distance = calculateDistance(pathCoords);
+            const speed = duration > 0 ? (distance / 1000) / (duration / 3600) : 0;
+            const calories = Math.round(distance * 0.06); // 约60卡/公里
+            
+            // 保存记录
+            const record = {
+                id: Date.now(),
+                date: new Date().toLocaleString(),
+                duration,
+                distance,
+                speed,
+                calories,
+                path: pathCoords
+            };
+            
+            history.unshift(record);
+            saveData(STORAGE_KEYS.HISTORY, history);
+            
+            // 重置界面
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('pauseBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('pauseBtn').textContent = '暂停';
+            
+            // 更新统计
+            updateStats();
+            updateHistoryList();
+            checkAchievements();
+            
+            showMessage(`遛狗完成！里程 ${(distance/1000).toFixed(2)} km`);
+        }
+        
+        function updatePath() {
+            if (pathLine) {
+                pathLine.setLatLngs(pathCoords);
+            }
+        }
+        
+        function updateTimer() {
+            if (isPaused) return;
+            
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            document.getElementById('duration').textContent = 
+                String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+            
+            // 更新里程和速度
+            const distance = calculateDistance(pathCoords);
+            const speed = elapsed > 0 ? (distance / 1000) / (elapsed / 3600) : 0;
+            const calories = Math.round(distance * 0.06);
+            
+            document.getElementById('distance').textContent = (distance / 1000).toFixed(2);
+            document.getElementById('speed').textContent = speed.toFixed(1);
+            document.getElementById('calories').textContent = calories;
+        }
+        
+        function calculateDistance(coords) {
+            if (coords.length < 2) return 0;
+            
+            let total = 0;
+            for (let i = 1; i < coords.length; i++) {
+                total += getDistanceFromLatLonInM(
+                    coords[i-1][0], coords[i-1][1],
+                    coords[i][0], coords[i][1]
+                );
+            }
+            return total;
+        }
+        
+        function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+        
+        // ==================== 历史记录 ====================
+        function updateHistoryList() {
+            const container = document.getElementById('historyList');
+            
+            if (history.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#888;padding:20px;">暂无记录</p>';
+                return;
+            }
+            
+            container.innerHTML = history.map(item => `
+                <div class="history-item" onclick="viewHistory(${item.id})">
+                    <h3>${item.date}</h3>
+                    <p>${(item.distance/1000).toFixed(2)} km · ${formatDuration(item.duration)} · ${item.speed.toFixed(1)} km/h</p>
+                    <p style="margin-top:5px;">消耗 ${item.calories} 千卡</p>
+                </div>
+            `).join('');
+        }
+        
+        function viewHistory(id) {
+            const record = history.find(h => h.id === id);
+            if (!record || !record.path || record.path.length === 0) return;
+            
+            // 显示历史轨迹
+            if (pathLine) map.removeLayer(pathLine);
+            pathLine = L.polyline(record.path, {
+                color: '#2196F3',
+                weight: 4,
+                opacity: 0.8
+            }).addTo(map);
+            
+            map.fitBounds(pathLine.getBounds());
+            closeHistoryPanel();
+            showMessage('显示历史轨迹');
+        }
+        
+        function deleteHistory(id) {
+            if (!confirm('确定删除这条记录？')) return;
+            history = history.filter(h => h.id !== id);
+            saveData(STORAGE_KEYS.HISTORY, history);
+            updateHistoryList();
+            updateStats();
+        }
+        
+        function clearAllHistory() {
+            if (!confirm('确定清空所有遛狗记录？此操作不可恢复！')) return;
+            history = [];
+            saveData(STORAGE_KEYS.HISTORY, history);
+            updateHistoryList();
+            updateStats();
+            showMessage('已清空所有记录');
+        }
+        
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        }
+        
+        // ==================== 统计信息 ====================
+        function updateStats() {
+            const totalWalks = history.length;
+            const totalDistance = history.reduce((sum, h) => sum + h.distance, 0);
+            
+            document.getElementById('totalWalks').textContent = totalWalks;
+            document.getElementById('totalDistance').textContent = (totalDistance / 1000).toFixed(1) + 'km';
+            updateExplorePercent();
+        }
+        
+        // ==================== 成就系统 ====================
+        function checkAchievements() {
+            const newAchievements = [];
+            
+            // 初次遛狗
+            if (history.length >= 1 && !achievements.first_walk) {
+                achievements.first_walk = true;
+                newAchievements.push(ACHIEVEMENT_LIST.first_walk);
+            }
+            
+            // 距离成就
+            history.forEach(h => {
+                if (h.distance >= 1000 && !achievements.distance_1km) {
+                    achievements.distance_1km = true;
+                    newAchievements.push(ACHIEVEMENT_LIST.distance_1km);
+                }
+                if (h.distance >= 5000 && !achievements.distance_5km) {
+                    achievements.distance_5km = true;
+                    newAchievements.push(ACHIEVEMENT_LIST.distance_5km);
+                }
+            });
+            
+            // 探索成就
+            if (exploredAreas.length >= 10 && !achievements.explore_10) {
+                achievements.explore_10 = true;
+                newAchievements.push(ACHIEVEMENT_LIST.explore_10);
+            }
+            if (exploredAreas.length >= 50 && !achievements.explore_50) {
+                achievements.explore_50 = true;
+                newAchievements.push(ACHIEVEMENT_LIST.explore_50);
+            }
+            
+            // 次数成就
+            if (history.length >= 10 && !achievements.walk_10) {
+                achievements.walk_10 = true;
+                newAchievements.push(ACHIEVEMENT_LIST.walk_10);
+            }
+            if (history.length >= 50 && !achievements.walk_50) {
+                achievements.walk_50 = true;
+                newAchievements.push(ACHIEVEMENT_LIST.walk_50);
+            }
+            
+            saveData(STORAGE_KEYS.ACHIEVEMENTS, achievements);
+            
+            if (newAchievements.length > 0) {
+                showMessage('🎉 解锁成就: ' + newAchievements.map(a => a.name).join('、'));
+            }
+        }
+        
+        // ==================== 界面交互 ====================
+        function showMessage(msg) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:15px 25px;border-radius:10px;z-index:3000;animation:fadeIn 0.3s;';
+            div.textContent = msg;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 2500);
+        }
+        
+        function hideLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) loading.style.display = 'none';
+        }
+        
+        function openSettings() {
+            document.getElementById('settingsPanel').classList.add('open');
+        }
+        
+        function closeSettings() {
+            document.getElementById('settingsPanel').classList.remove('open');
+        }
+        
+        function openHistoryPanel() {
+            document.getElementById('historyPanel').classList.add('open');
+        }
+        
+        function closeHistoryPanel() {
+            document.getElementById('historyPanel').classList.remove('open');
+        }
+        
+        // ==================== 事件绑定 ====================
+        document.getElementById('startBtn').addEventListener('click', startWalk);
+        document.getElementById('pauseBtn').addEventListener('click', pauseWalk);
+        document.getElementById('stopBtn').addEventListener('click', stopWalk);
+        document.getElementById('menuBtn').addEventListener('click', openHistoryPanel);
+        document.getElementById('closeSettings').addEventListener('click', closeSettings);
+        document.getElementById('closeHistory').addEventListener('click', closeHistoryPanel);
+        document.getElementById('clearHistory').addEventListener('click', clearAllHistory);
+        
+        // 地图类型切换
+        document.getElementById('mapType').addEventListener('change', function(e) {
+            const type = e.target.value;
+            Object.values(mapLayers).forEach(layer => map.removeLayer(layer));
+            if (mapLayers[type]) mapLayers[type].addTo(map);
+        });
+        
+        // 探索半径调整
+        document.getElementById('exploreRadius').addEventListener('input', function(e) {
+            exploreRadius = parseInt(e.target.value);
+            document.getElementById('radiusValue').textContent = exploreRadius;
+        });
+        
+        // 夜间模式
+        document.getElementById('toggleNight').addEventListener('click', function() {
+            nightMode = !nightMode;
+            document.body.classList.toggle('night-mode', nightMode);
+            this.textContent = nightMode ? '切换日间模式' : '切换夜间模式';
+        });
+        
+        // 重置探索
+        document.getElementById('resetExplore').addEventListener('click', function() {
+            if (confirm('确定重置所有探索进度吗？')) {
+                exploredAreas = [];
+                saveData(STORAGE_KEYS.EXPLORED, []);
+                drawFog();
+                updateExplorePercent();
+                showMessage('已重置探索进度');
+            }
+        });
+        
+        // 提醒功能
+        document.getElementById('setReminder').addEventListener('click', function() {
+            const time = document.getElementById('reminderTime').value;
+            if (!time) {
+                showMessage('请选择提醒时间');
+                return;
+            }
+            
+            if ('Notification' in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        scheduleReminder(time);
+                        showMessage('已设置提醒: ' + time);
+                    } else {
+                        showMessage('需要通知权限');
+                    }
+                });
+            } else {
+                showMessage('您的浏览器不支持提醒');
+            }
+        });
+        
+        function scheduleReminder(time) {
+            const [hours, minutes] = time.split(':');
+            const now = new Date();
+            const target = new Date();
+            target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+            
+            if (target <= now) target.setDate(target.getDate() + 1);
+            
+            const delay = target - now;
+            setTimeout(() => {
+                new Notification('遛狗提醒', {
+                    body: '是时候带狗狗出去散步啦！🐕',
+                    icon: '🐕'
+                });
+            }, delay);
+        }
+        
+        // ==================== 启动 ====================
+        window.addEventListener('load', initMap);
+        
+        // 添加CSS动画
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeIn { from { opacity: 0; transform: translate(-50%,-50%) scale(0.8); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
